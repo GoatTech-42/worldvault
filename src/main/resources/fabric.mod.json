@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "worldvault",
+  "version": "${version}",
+  "name": "Worldvault",
+  "description": "Stores files as book payloads in a Minecraft world.",
+  "environment": "*",
+  "entrypoints": {"main": ["dev.luke.WorldvaultMod"]},
+  "depends": {"fabricloader": ">=0.19.5", "minecraft": "1.21.11", "java": ">=21", "fabric-api": "*"}
+}
