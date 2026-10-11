@@ -12,8 +12,15 @@ To try it in a disposable world:
 4. Stand within eight blocks and run `/worldvault store filename.ext X Y Z` with the chest block's coordinates. Only a simple filename is accepted, without spaces or path separators. The chest books are physical items, so don't break or replace the chest if you want the file back.
 5. Run `/worldvault list`, then `/worldvault restore filename.ext` from anywhere in the same world. The recovered file appears in `saves/<world>/worldvault/out/`. It will not overwrite an existing output; move the file before restoring it again.
 
-The command needs the chest's chunk, which may load briefly when restoring from far away. World damage, chest tampering, missing books, or a bad checksum causes a failure rather than silently producing an altered file. Keep backups of important files. This is an early build awaiting in-game testing, not a safe place for your only copy.
+The command needs the chest's chunk, which may load briefly when restoring from far away. World damage, chest tampering, missing books, or a bad checksum causes a failure rather than silently producing an altered file. Keep backups of important files. This is an early build, not a safe place for your only copy. The automated save/reload checks below do not replace trying it in a disposable singleplayer world first.
 
 Build: JDK 21, Gradle 9.2.1, Fabric Loom 1.14.10. Run `gradle build`; the remapped jar is in `build/libs/`.
 
 Note: a double chest is not supported in this build. Don't put the vault chest flush against another chest later; the restore command will ask you to separate them first. Restores load the chest's chunk temporarily, so large worlds may pause briefly.
+
+
+## Verification
+
+Run `gradle test` to check the codecs, locator index, and real Minecraft chest serialization. The chest test writes file bytes into written-book items, saves the chest to compressed NBT with the game's own serializer, loads a new chest from that file, and checks every restored byte. Fixtures cover empty files, book-boundary sizes, 8 KB, and 54 KB. Other cases check reordered slots, missing books, foreign items, occupied chests, and files that exceed one chest. All tests run without starting a server or touching an existing world.
+
+The September 26 disposable-server smoke test also exercised store/list/restore, survival book cost, double-chest rejection, and output overwrite protection. That test used a temporary build with the singleplayer gate relaxed. The shipped mod keeps the gate; an integrated singleplayer-client playtest is still a separate check.
