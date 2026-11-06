@@ -2,7 +2,7 @@
 
 Experimental Fabric 1.21.11 mod. Current build is for local singleplayer worlds, not random public servers. This is not a cloud backup: deleting the world also deletes the vault.
 
-Files are Base64-encoded into written books inside a chest in your world. The index in `world/worldvault/index.tsv` stores only a name and chest coordinates; the chest books hold the file data. Each book holds 2,048 file bytes, and a single chest holds up to about 54 KB. The decoder checks the file size and CRC32 before exporting.
+Files are Base64-encoded into written books inside a chest in your world. The index in `world/worldvault/index.tsv` stores only a name and chest coordinates; the chest books hold the file data. Each book holds 2,048 file bytes, and a single chest holds up to about 54 KB and a double chest up to about 108 KB. The decoder checks the file size and CRC32 before exporting.
 
 To try it in a disposable world:
 
@@ -16,7 +16,7 @@ The command needs the chest's chunk, which may load briefly when restoring from 
 
 Build: JDK 21, Gradle 9.2.1, Fabric Loom 1.14.10. Run `gradle build`; the remapped jar is in `build/libs/`.
 
-Note: a double chest is not supported in this build. Don't put the vault chest flush against another chest later; the restore command will ask you to separate them first. Restores load the chest's chunk temporarily, so large worlds may pause briefly.
+Double chests: you can store into two paired chest blocks (both halves must be empty). Books fill the left half's 27 slots first (slots 0-26), then the right half's (27-53); "left" and "right" are the chest blocks' own LEFT/RIGHT state, so it does not matter which half you click. The index remembers that the vault is a double chest, and restore requires the same layout: if you break one half, or pair a chest next to a vault that was stored in a single chest, the restore fails with a clear message instead of guessing. Separate them again and retry. Restores load the chest's chunk temporarily, so large worlds may pause briefly.
 
 
 ## Verification

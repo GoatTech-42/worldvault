@@ -10,7 +10,12 @@ import java.util.List;
 
 /** Small locator within the save, not a copy of the contents. Books remain authoritative. */
 public final class VaultIndex {
-    public record Entry(String name, String dimension, int x, int y, int z, int books) { }
+    /** {@code doubleChest} is true when the books were stored across a double chest (7th, optional column). */
+    public record Entry(String name, String dimension, int x, int y, int z, int books, boolean doubleChest) {
+        public Entry(String name, String dimension, int x, int y, int z, int books) {
+            this(name, dimension, x, y, z, books, false);
+        }
+    }
     private final Path path;
     public VaultIndex(Path worldFolder) { path = worldFolder.resolve("worldvault/index.tsv"); }
 
@@ -19,14 +24,20 @@ public final class VaultIndex {
         List<Entry> entries = new ArrayList<>();
         for (String line : Files.readAllLines(path, StandardCharsets.UTF_8)) {
             String[] fields = line.split("\\t", -1);
-            if (fields.length != 6) throw new IOException("Bad vault index row");
+            if (fields.length != 6 && fields.length != 7) throw new IOException("Bad vault index row");
             try {
                 String name = new String(java.util.Base64.getUrlDecoder().decode(fields[0]), StandardCharsets.UTF_8);
                 entries.add(new Entry(name, fields[1], Integer.parseInt(fields[2]), Integer.parseInt(fields[3]),
-                        Integer.parseInt(fields[4]), Integer.parseInt(fields[5])));
+                        Integer.parseInt(fields[4]), Integer.parseInt(fields[5]),
+                        fields.length == 7 && parseLayout(fields[6])));
             } catch (IllegalArgumentException ex) { throw new IOException("Bad vault index row", ex); }
         }
         return List.copyOf(entries);
+    }
+
+    private static boolean parseLayout(String field) {
+        if (field.equals("double")) return true;
+        throw new IllegalArgumentException("Bad vault layout");
     }
 
     public void add(Entry entry) throws IOException {
@@ -54,7 +65,7 @@ public final class VaultIndex {
                 String name = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(entry.name().getBytes(StandardCharsets.UTF_8));
                 output.append(name).append('\t').append(entry.dimension()).append('\t').append(entry.x())
                         .append('\t').append(entry.y()).append('\t').append(entry.z()).append('\t').append(entry.books())
-                        .append('\n');
+                        .append(entry.doubleChest() ? "\tdouble" : "").append('\n');
             }
             Files.writeString(temporary, output.toString(), StandardCharsets.UTF_8);
             Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);

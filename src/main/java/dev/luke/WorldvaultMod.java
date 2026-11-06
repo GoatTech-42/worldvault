@@ -10,7 +10,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.Container;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -70,9 +73,9 @@ public final class WorldvaultMod implements ModInitializer {
             if (!(level.getBlockEntity(pos) instanceof ChestBlockEntity chest)) {
                 throw new IllegalArgumentException("Place an empty single chest at those coordinates");
             }
-            if (chest.getBlockState().getValue(net.minecraft.world.level.block.ChestBlock.TYPE) != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
-                throw new IllegalArgumentException("Use a single chest; paired chests are not supported yet");
-            }
+            boolean paired = chest.getBlockState().getValue(ChestBlock.TYPE) != ChestType.SINGLE;
+            ChestBlockEntity[] halves = paired ? WorldvaultChest.halves(chest, level::getBlockEntity) : null;
+            Container space = paired ? WorldvaultChest.combine(halves[0], halves[1]) : chest;
             if (name.isBlank() || name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")) {
                 throw new IllegalArgumentException("Use a plain file name");
             }
@@ -85,31 +88,34 @@ public final class WorldvaultMod implements ModInitializer {
                 throw new IllegalArgumentException("File not found in worldvault/in");
             }
             long size = Files.size(input);
-            if (size > 27L * 2048 - 269) throw new IllegalArgumentException("File exceeds one chest (about 54 KB)");
+            long cap = (paired ? 54L : 27L) * 2048 - 269;
+            if (size > cap) throw new IllegalArgumentException(paired
+                    ? "File exceeds one double chest (about 108 KB)" : "File exceeds one chest (about 54 KB); a double chest holds about 108 KB");
             List<WorldvaultBooks.Book> books = WorldvaultBooks.pack(name, Files.readAllBytes(input));
             int blanks = 0;
             for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
                 if (player.getInventory().getItem(slot).is(Items.WRITABLE_BOOK)) blanks += player.getInventory().getItem(slot).getCount();
             }
             if (blanks < books.size()) throw new IllegalArgumentException("Need " + books.size() + " book-and-quills in your inventory");
-            if (books.size() > chest.getContainerSize()) throw new IllegalArgumentException("Need a larger chest");
-            for (int slot = 0; slot < chest.getContainerSize(); slot++) {
-                if (!chest.getItem(slot).isEmpty()) throw new IllegalArgumentException("Chest must be empty");
+            if (books.size() > space.getContainerSize()) throw new IllegalArgumentException("Need a larger chest");
+            for (int slot = 0; slot < space.getContainerSize(); slot++) {
+                if (!space.getItem(slot).isEmpty()) throw new IllegalArgumentException(paired ? "Both halves of the double chest must be empty" : "Chest must be empty");
             }
             VaultIndex index = new VaultIndex(source.getServer().getWorldPath(LevelResource.ROOT));
             for (VaultIndex.Entry old : index.load()) {
                 if (old.name().equals(name)) throw new IllegalArgumentException("A file with that name is already stored");
                 if (old.dimension().equals(level.dimension().identifier().toString())
-                        && old.x() == pos.getX() && old.y() == pos.getY() && old.z() == pos.getZ()) {
+                        && ((old.x() == pos.getX() && old.y() == pos.getY() && old.z() == pos.getZ())
+                        || (paired && (isPos(old, halves[0].getBlockPos()) || isPos(old, halves[1].getBlockPos()))))) {
                     throw new IllegalArgumentException("Chest already registered");
                 }
             }
             VaultIndex.Entry entry = new VaultIndex.Entry(name, level.dimension().identifier().toString(),
-                    pos.getX(), pos.getY(), pos.getZ(), books.size());
+                    pos.getX(), pos.getY(), pos.getZ(), books.size(), paired);
             // Reserve the locator before writing books. Never consume the player's books on a failed write.
             index.add(entry);
             try {
-                WorldvaultChest.write(chest, books);
+                WorldvaultChest.write(space, books);
             } catch (RuntimeException ex) {
                 try { index.remove(entry); }
                 catch (IOException rollback) { ex.addSuppressed(rollback); }
@@ -132,6 +138,9 @@ public final class WorldvaultMod implements ModInitializer {
             return 0;
         }
     }
+    private static boolean isPos(VaultIndex.Entry e, BlockPos p) {
+        return e.x() == p.getX() && e.y() == p.getY() && e.z() == p.getZ();
+    }
     private static int restore(CommandSourceStack source, String name) {
         if (!singleplayer(source)) return 0;
         try {
@@ -153,10 +162,12 @@ public final class WorldvaultMod implements ModInitializer {
             if (!(level.getBlockEntity(chestPos) instanceof ChestBlockEntity chest)) {
                 throw new IllegalArgumentException("Chest is gone; restore a world backup or bring the books back");
             }
-            if (chest.getBlockState().getValue(net.minecraft.world.level.block.ChestBlock.TYPE) != net.minecraft.world.level.block.state.properties.ChestType.SINGLE) {
-                throw new IOException("Vault chest was paired with another chest; separate it first");
-            }
-            WorldvaultCodec.File file = WorldvaultChest.read(chest);
+            ServerLevel halfLevel = level;
+            Container space = WorldvaultChest.restoreSpace(entry.doubleChest(), chest, pos -> {
+                halfLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
+                return halfLevel.getBlockEntity(pos);
+            });
+            WorldvaultCodec.File file = WorldvaultChest.read(space);
             if (!file.name().equals(entry.name())) throw new IOException("Books do not match the index");
             Path outputDir = root(source).resolve("out").toAbsolutePath().normalize();
             Files.createDirectories(outputDir);
