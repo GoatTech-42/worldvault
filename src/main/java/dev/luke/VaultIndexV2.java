@@ -19,7 +19,10 @@ public final class VaultIndexV2 {
     public record Chunk(String dimension, int x, int y, int z, int books, boolean doubleChest, long crc32) {}
 
     public record Entry(String name, long size, String sha256, List<Chunk> chunks) {
-        public Entry { chunks = List.copyOf(chunks); }
+        public Entry {
+            chunks = List.copyOf(chunks);
+            if (chunks.isEmpty()) throw new IllegalArgumentException("Vault entry needs at least one chest");
+        }
     }
 
     private VaultIndexV2() {}
@@ -54,7 +57,7 @@ public final class VaultIndexV2 {
     public static List<Entry> read(String text) throws IOException {
         List<Entry> entries = new ArrayList<>();
         boolean v2 = isV2(text);
-        String[] lines = text.split("\n", -1);
+        String[] lines = text.split("\r\n|\r|\n", -1);
         for (int i = v2 ? 1 : 0; i < lines.length; i++) {
             String line = lines[i];
             if (line.isEmpty()) continue;

@@ -42,4 +42,31 @@ class VaultIndexV2Test {
         assertThrows(IOException.class, () -> VaultIndexV2.read(VaultIndexV2.HEADER + "\nbad\n"));
         assertThrows(IOException.class, () -> VaultIndexV2.read("only\tthree\tfields\n"));
     }
+    @Test
+    void rejectsEntryWithoutChunks() {
+        assertThrows(IllegalArgumentException.class,
+                () -> new VaultIndexV2.Entry("a", 0, "-", List.of()));
+    }
+
+    @Test
+    void readsV1WithCrlfAndCrLineEndings() throws IOException {
+        String name = java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("a.txt".getBytes());
+        String row = name + "\tminecraft:overworld\t1\t2\t3\t5";
+        String dbl = name + "b\tminecraft:the_nether\t4\t5\t6\t9\tdouble";
+        for (String eol : List.of("\r\n", "\r")) {
+            var read = VaultIndexV2.read(row + eol + dbl + eol);
+            assertEquals(2, read.size(), "eol " + eol.replace("\r", "CR").replace("\n", "LF"));
+            assertEquals(5, read.get(0).chunks().get(0).books());
+            assertTrue(read.get(1).chunks().get(0).doubleChest());
+        }
+    }
+
+    @Test
+    void readsV2WithCrlfAndCrLineEndings() throws IOException {
+        var e = new VaultIndexV2.Entry("f.bin", 10, "-", List.of(
+                new VaultIndexV2.Chunk("minecraft:overworld", 1, 64, 2, 1, false, 0xdeadbeefL)));
+        String lf = VaultIndexV2.write(List.of(e));
+        assertEquals(List.of(e), VaultIndexV2.read(lf.replace("\n", "\r\n")));
+        assertEquals(List.of(e), VaultIndexV2.read(lf.replace("\n", "\r")));
+    }
 }
