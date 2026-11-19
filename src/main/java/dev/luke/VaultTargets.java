@@ -62,9 +62,21 @@ public final class VaultTargets {
     /** Opens the chest (or double chest) behind a recorded chunk, in the layout it was stored in. */
     public static net.minecraft.world.Container open(WorldAccess world, VaultIndexV2.Chunk chunk) throws java.io.IOException {
         BlockPos pos = new BlockPos(chunk.x(), chunk.y(), chunk.z());
+        // Never load a chunk to restore: a lookup in an unloaded chunk would load it synchronously on the server thread.
+        if (!world.isLoaded(pos)) {
+            throw new java.io.IOException("Chest at " + chunk.x() + " " + chunk.y() + " " + chunk.z()
+                    + " is not loaded; go near it and try again");
+        }
         if (!(world.blockEntity(pos) instanceof ChestBlockEntity chest)) {
             throw new VaultService.ChestMissingException("Chest at " + chunk.x() + " " + chunk.y() + " " + chunk.z()
                     + " is gone; restore a world backup or bring the books back");
+        }
+        if (chest.getBlockState().getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
+            BlockPos other = pos.relative(ChestBlock.getConnectedDirection(chest.getBlockState()));
+            if (!world.isLoaded(other)) {
+                throw new java.io.IOException("The other half of the double chest at " + chunk.x() + " " + chunk.y() + " "
+                        + chunk.z() + " is not loaded; go near it and try again");
+            }
         }
         return WorldvaultChest.restoreSpace(chunk.doubleChest(), chest, world::blockEntity);
     }
