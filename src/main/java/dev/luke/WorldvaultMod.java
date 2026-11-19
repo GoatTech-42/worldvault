@@ -12,15 +12,12 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.ChestBlock;
-import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -63,8 +60,6 @@ public final class WorldvaultMod implements ModInitializer {
         return Commands.literal("chests").then(next);
     }
     private static final int MAX_LIST = 8;
-    private static final int MAX_RANGE_VOLUME = 4096;
-    private static final int MAX_CHESTS = 64;
 
     private static int storeList(com.mojang.brigadier.context.CommandContext<CommandSourceStack> ctx) {
         List<BlockPos> list = new ArrayList<>();
@@ -83,26 +78,7 @@ public final class WorldvaultMod implements ModInitializer {
     private static int storeRange(CommandSourceStack source, String name, BlockPos from, BlockPos to) {
         if (!singleplayer(source)) return 0;
         try {
-            long volume = (long) (Math.abs(from.getX() - to.getX()) + 1) * (Math.abs(from.getY() - to.getY()) + 1)
-                    * (Math.abs(from.getZ() - to.getZ()) + 1);
-            if (volume > MAX_RANGE_VOLUME) throw new IllegalArgumentException("Range is too large (limit " + MAX_RANGE_VOLUME + " blocks)");
-            ServerLevel level = source.getLevel();
-            List<BlockPos> found = new ArrayList<>();
-            java.util.Set<BlockPos> covered = new java.util.HashSet<>();
-            for (int x = Math.min(from.getX(), to.getX()); x <= Math.max(from.getX(), to.getX()); x++)
-                for (int y = Math.min(from.getY(), to.getY()); y <= Math.max(from.getY(), to.getY()); y++)
-                    for (int z = Math.min(from.getZ(), to.getZ()); z <= Math.max(from.getZ(), to.getZ()); z++) {
-                        BlockPos p = new BlockPos(x, y, z);
-                        if (covered.contains(p) || !(level.getBlockEntity(p) instanceof ChestBlockEntity chest)) continue;
-                        covered.add(p);
-                        if (chest.getBlockState().getValue(ChestBlock.TYPE) != ChestType.SINGLE) {
-                            covered.add(p.relative(ChestBlock.getConnectedDirection(chest.getBlockState())));
-                        }
-                        found.add(p);
-                        if (found.size() > MAX_CHESTS) throw new IllegalArgumentException("Too many chests in range (limit " + MAX_CHESTS + ")");
-                    }
-            if (found.isEmpty()) throw new IllegalArgumentException("No chests in that range");
-            return store(source, name, found);
+            return store(source, name, VaultTargets.scanRange(access(source.getLevel()), from, to));
         } catch (Exception ex) {
             source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));
             return 0;
@@ -136,16 +112,14 @@ public final class WorldvaultMod implements ModInitializer {
         }
     }
 
-    private static VaultService.Target target(ServerLevel level, BlockPos pos) {
-        if (!(level.getBlockEntity(pos) instanceof ChestBlockEntity chest)) {
-            throw new IllegalArgumentException("No chest at " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
-        }
-        String dimension = level.dimension().identifier().toString();
-        boolean paired = chest.getBlockState().getValue(ChestBlock.TYPE) != ChestType.SINGLE;
-        if (!paired) return new VaultService.Target(dimension, pos, false, chest, List.of(pos));
-        ChestBlockEntity[] halves = WorldvaultChest.halves(chest, level::getBlockEntity);
-        return new VaultService.Target(dimension, pos, true, WorldvaultChest.combine(halves[0], halves[1]),
-                List.of(halves[0].getBlockPos(), halves[1].getBlockPos()));
+    private static VaultTargets.WorldAccess access(ServerLevel level) {
+        return new VaultTargets.WorldAccess() {
+            @Override public String dimension() { return level.dimension().identifier().toString(); }
+            @Override public boolean isLoaded(BlockPos pos) { return level.isLoaded(pos); }
+            @Override public net.minecraft.world.level.block.entity.BlockEntity blockEntity(BlockPos pos) {
+                return level.getBlockEntity(pos);
+            }
+        };
     }
 
     private static int store(CommandSourceStack source, String name, List<BlockPos> chests) {
@@ -153,9 +127,7 @@ public final class WorldvaultMod implements ModInitializer {
         try {
             ServerPlayer player = source.getPlayerOrException();
             ServerLevel level = source.getLevel();
-            for (BlockPos pos : chests) {
-                if (player.position().distanceToSqr(pos.getCenter()) > 64) throw new IllegalArgumentException("Stand near your chests");
-            }
+            VaultTargets.checkReach(player.position(), chests);
             if (name.isBlank() || name.contains("/") || name.contains("\\") || name.equals(".") || name.equals("..")) {
                 throw new IllegalArgumentException("Use a plain file name");
             }
@@ -167,8 +139,7 @@ public final class WorldvaultMod implements ModInitializer {
             if (!input.startsWith(inputDir) || !Files.isRegularFile(input)) {
                 throw new IllegalArgumentException("File not found in worldvault/in");
             }
-            List<VaultService.Target> targets = new ArrayList<>();
-            for (BlockPos pos : chests) targets.add(target(level, pos));
+            List<VaultService.Target> targets = VaultTargets.targets(access(level), chests);
             long size = Files.size(input);
             if (size > VaultService.capacity(targets) || size > Integer.MAX_VALUE - 8) {
                 throw new IllegalArgumentException("File is too large for the chests given");
@@ -212,14 +183,9 @@ public final class WorldvaultMod implements ModInitializer {
             }
             if (found == null) throw new IllegalArgumentException("No file by that name in this world");
             VaultIndexV2.Entry entry = found;
-            Path outputDir = root(source).resolve("out").toAbsolutePath().normalize();
-            Path output = outputDir.resolve(entry.name()).normalize();
-            if (!output.startsWith(outputDir)) throw new IOException("Unsafe output name");
-            if (Files.exists(output)) throw new IOException("worldvault/out already has " + entry.name() + "; move it first");
             // Every chest is read and verified before anything is written to disk.
-            WorldvaultCodec.File file = VaultService.restore(entry, chunk -> openChunk(source, chunk));
-            Files.createDirectories(outputDir);
-            Files.write(output, file.bytes(), StandardOpenOption.CREATE_NEW);
+            WorldvaultCodec.File file = VaultService.restoreTo(entry, chunk -> openChunk(source, chunk),
+                    root(source).resolve("out"));
             source.sendSuccess(() -> Component.literal("Restored " + file.name() + " to worldvault/out."), false);
             return 1;
         } catch (Exception ex) {

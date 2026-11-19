@@ -1,6 +1,9 @@
 package dev.luke;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -112,6 +115,22 @@ public final class VaultService {
     private static void clear(Container space) {
         for (int slot = 0; slot < space.getContainerSize(); slot++) space.setItem(slot, ItemStack.EMPTY);
         space.setChanged();
+    }
+
+    /**
+     * Restores into {@code outputDir}: every chest is read and verified first, and the file is written only when
+     * all of it checks out, so a failed restore leaves no output file.
+     */
+    public static WorldvaultCodec.File restoreTo(VaultIndexV2.Entry entry, ChestResolver resolver, Path outputDir)
+            throws IOException {
+        Path dir = outputDir.toAbsolutePath().normalize();
+        Path output = dir.resolve(entry.name()).normalize();
+        if (!output.startsWith(dir)) throw new IOException("Unsafe output name");
+        if (Files.exists(output)) throw new IOException("worldvault/out already has " + entry.name() + "; move it first");
+        WorldvaultCodec.File file = restore(entry, resolver);
+        Files.createDirectories(dir);
+        Files.write(output, file.bytes(), StandardOpenOption.CREATE_NEW);
+        return file;
     }
 
     /** Reads every chunk, verifies each CRC, the size and the SHA-256 (v1 entries carry none), and returns the file. */
