@@ -292,8 +292,15 @@ public final class VaultService {
         if (Files.exists(output)) throw new IOException("worldvault/out already has " + entry.name() + "; move it first");
         WorldvaultCodec.File file = restore(entry, resolver);
         Files.createDirectories(dir);
-        try (java.io.OutputStream out = hooks.wrapOutput(Files.newOutputStream(output, StandardOpenOption.CREATE_NEW))) {
+        // CREATE_NEW never replaces an earlier output. Once it has created the file, this attempt owns it, and a
+        // failed write (a full disk can leave a partial file) removes it so a retry is not blocked.
+        java.io.OutputStream raw = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW);
+        try (java.io.OutputStream out = hooks.wrapOutput(raw)) {
             out.write(file.bytes());
+        } catch (IOException | RuntimeException ex) {
+            try { Files.deleteIfExists(output); }
+            catch (IOException cleanup) { ex.addSuppressed(cleanup); }
+            throw ex;
         }
         return file;
     }
