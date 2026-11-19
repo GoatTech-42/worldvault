@@ -17,7 +17,6 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
-import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.storage.LevelResource;
 
@@ -204,22 +203,7 @@ public final class WorldvaultMod implements ModInitializer {
             VaultService.Plan plan = VaultService.prepare(name, Files.readAllBytes(input), targets,
                     new VaultIndexStore(source.getServer().getWorldPath(LevelResource.ROOT)));
             int books = plan.totalBooks();
-            int blanks = 0;
-            for (int slot = 0; slot < player.getInventory().getContainerSize(); slot++) {
-                if (player.getInventory().getItem(slot).is(Items.WRITABLE_BOOK)) blanks += player.getInventory().getItem(slot).getCount();
-            }
-            if (blanks < books) throw new IllegalArgumentException("Need " + books + " book-and-quills in your inventory");
-            VaultService.commit(plan); // validated first; a failed write is rolled back and consumes nothing
-            int left = books;
-            for (int slot = 0; slot < player.getInventory().getContainerSize() && left > 0; slot++) {
-                var stack = player.getInventory().getItem(slot);
-                if (stack.is(Items.WRITABLE_BOOK)) {
-                    int taken = Math.min(stack.getCount(), left);
-                    stack.shrink(taken);
-                    left -= taken;
-                }
-            }
-            player.getInventory().setChanged();
+            VaultService.commitAndTakeBooks(plan, player.getInventory());
             int chestCount = plan.used().size();
             source.sendSuccess(() -> Component.literal("Stored " + name + " in " + books + " books across "
                     + chestCount + (chestCount == 1 ? " chest." : " chests.")), false);
