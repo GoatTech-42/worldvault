@@ -10,9 +10,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.WritableBookContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -199,9 +201,15 @@ public final class VaultService {
     public static int blankBooks(Container inventory) {
         int blanks = 0;
         for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
-            if (inventory.getItem(slot).is(Items.WRITABLE_BOOK)) blanks += inventory.getItem(slot).getCount();
+            if (isBlank(inventory.getItem(slot))) blanks += inventory.getItem(slot).getCount();
         }
         return blanks;
+    }
+
+    /** A book-and-quill with nothing written in it. One the player has started writing is never spent. */
+    static boolean isBlank(ItemStack stack) {
+        return stack.is(Items.WRITABLE_BOOK)
+                && stack.getOrDefault(DataComponents.WRITABLE_BOOK_CONTENT, WritableBookContent.EMPTY).pages().isEmpty();
     }
 
     /**
@@ -220,7 +228,7 @@ public final class VaultService {
         int left = books;
         for (int slot = 0; slot < inventory.getContainerSize() && left > 0; slot++) {
             ItemStack stack = inventory.getItem(slot);
-            if (stack.is(Items.WRITABLE_BOOK)) {
+            if (isBlank(stack)) {
                 int taken = Math.min(stack.getCount(), left);
                 stack.shrink(taken);
                 left -= taken;
