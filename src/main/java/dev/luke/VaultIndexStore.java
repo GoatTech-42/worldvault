@@ -39,6 +39,22 @@ public final class VaultIndexStore {
         if (entries.remove(entry)) write(entries);
     }
 
+    /** The index file exactly as it is on disk, or null when there is none; see {@link #restoreRaw}. */
+    public byte[] raw() throws IOException {
+        return Files.exists(path) ? Files.readAllBytes(path) : null;
+    }
+
+    /** Puts back what {@link #raw} returned: the same bytes, or no file at all. */
+    public void restoreRaw(byte[] raw) throws IOException {
+        if (raw == null) { Files.deleteIfExists(path); return; }
+        Files.createDirectories(path.getParent());
+        Path temporary = Files.createTempFile(path.getParent(), "index-", ".tmp");
+        try {
+            Files.write(temporary, raw);
+            Files.move(temporary, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        } finally { Files.deleteIfExists(temporary); }
+    }
+
     static boolean samePos(VaultIndexV2.Chunk a, VaultIndexV2.Chunk b) {
         return a.dimension().equals(b.dimension()) && a.x() == b.x() && a.y() == b.y() && a.z() == b.z();
     }

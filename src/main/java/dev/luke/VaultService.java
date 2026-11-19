@@ -96,8 +96,18 @@ public final class VaultService {
         return new Plan(name, entry, used, books, index);
     }
 
-    /** Reserves the index row, then writes every chest. On any failure the chests are emptied and the row removed. */
+    /**
+     * Reserves the index row, then writes every chest. On any failure each chest touched is put back slot by slot
+     * as it was before the commit, and the index file is restored byte for byte (or removed if there was none).
+     */
     public static VaultIndexV2.Entry commit(Plan plan) throws IOException {
+        byte[] indexBefore = plan.index().raw();
+        List<List<ItemStack>> before = new ArrayList<>();
+        for (Target t : plan.used()) {
+            List<ItemStack> slots = new ArrayList<>();
+            for (int slot = 0; slot < t.space().getContainerSize(); slot++) slots.add(t.space().getItem(slot).copy());
+            before.add(slots);
+        }
         plan.index().add(plan.entry());
         int touched = 0;
         try {
@@ -107,19 +117,26 @@ public final class VaultService {
             }
         } catch (RuntimeException ex) {
             for (int i = 0; i < touched; i++) {
-                try { clear(plan.used().get(i).space()); }
+                try { putBack(plan.used().get(i).space(), before.get(i)); }
                 catch (RuntimeException cleanup) { ex.addSuppressed(cleanup); }
             }
-            try { plan.index().remove(plan.entry()); }
+            try { plan.index().restoreRaw(indexBefore); }
             catch (IOException rollback) { ex.addSuppressed(rollback); }
             throw ex;
         }
         return plan.entry();
     }
 
-    private static void clear(Container space) {
-        for (int slot = 0; slot < space.getContainerSize(); slot++) space.setItem(slot, ItemStack.EMPTY);
-        space.setChanged();
+    /** Restores only the slots that differ, so items the store never placed are left alone. */
+    private static void putBack(Container space, List<ItemStack> before) {
+        boolean changed = false;
+        for (int slot = 0; slot < space.getContainerSize(); slot++) {
+            if (!ItemStack.matches(space.getItem(slot), before.get(slot))) {
+                space.setItem(slot, before.get(slot).copy());
+                changed = true;
+            }
+        }
+        if (changed) space.setChanged();
     }
 
     /**
