@@ -10,6 +10,7 @@ import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.server.permissions.PermissionCheck;
 import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -39,18 +40,35 @@ public final class WorldvaultMod implements ModInitializer {
         CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> register(dispatcher));
     }
 
-    /** Whether the commands are registered in this environment. */
+    /**
+     * Whether the commands are registered in this environment. Never on a dedicated server: the commands read and
+     * write files on the machine running the server, which on a dedicated server belongs to someone else.
+     */
     static boolean registersOn(EnvType environment) {
-        return true;
+        return environment != EnvType.SERVER;
     }
 
-    /** Why a command source may not run Worldvault, or null when it may. */
+    /**
+     * Owner level (4). The commands read files from and write files to the host's disk ({@code worldvault/in} and
+     * {@code worldvault/out}) and edit the index, which is more than level 2 (/give, /setblock) grants. In
+     * singleplayer the host has level 4 when cheats are allowed, so nothing changes for the host.
+     */
+    static final PermissionCheck PERMISSION = Commands.LEVEL_OWNERS;
+
+    /**
+     * Why a command source may not run Worldvault, or null when it may. Only the singleplayer host: on an
+     * integrated server opened to LAN, other players are refused even if they hold a high permission level,
+     * because the files belong to the host's machine.
+     */
     static String refusal(boolean dedicatedServer, boolean singleplayer, boolean owner) {
-        return singleplayer ? null : "Worldvault currently works in singleplayer only.";
+        if (dedicatedServer || !singleplayer) return "Worldvault currently works in singleplayer only.";
+        if (!owner) return "Only the player hosting this world can use Worldvault.";
+        return null;
     }
 
     static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("worldvault")
+                .requires(Commands.hasPermission(PERMISSION))
                 .then(Commands.literal("list").executes(ctx -> list(ctx.getSource())))
                 .then(Commands.literal("store")
                         .then(Commands.argument("name", StringArgumentType.word())
