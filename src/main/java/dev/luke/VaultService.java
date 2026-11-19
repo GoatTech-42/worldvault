@@ -10,8 +10,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.component.WritableBookContent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -192,6 +195,47 @@ public final class VaultService {
             throw report;
         }
         return plan.entry();
+    }
+
+    /** Book-and-quills in {@code inventory}, counted the way {@link #commitAndTakeBooks} spends them. */
+    public static int blankBooks(Container inventory) {
+        int blanks = 0;
+        for (int slot = 0; slot < inventory.getContainerSize(); slot++) {
+            if (isBlank(inventory.getItem(slot))) blanks += inventory.getItem(slot).getCount();
+        }
+        return blanks;
+    }
+
+    /** A book-and-quill with nothing written in it. One the player has started writing is never spent. */
+    static boolean isBlank(ItemStack stack) {
+        return stack.is(Items.WRITABLE_BOOK)
+                && stack.getOrDefault(DataComponents.WRITABLE_BOOK_CONTENT, WritableBookContent.EMPTY).pages().isEmpty();
+    }
+
+    /**
+     * The store command's last step. Checks that {@code inventory} (the player's) holds a book-and-quill for every
+     * book in the plan, commits, and only after the commit has written every chest and the index row takes that
+     * many, first slot first. A store that is refused or fails takes none.
+     */
+    public static VaultIndexV2.Entry commitAndTakeBooks(Plan plan, Container inventory) throws IOException {
+        return commitAndTakeBooks(plan, inventory, NO_HOOKS);
+    }
+
+    public static VaultIndexV2.Entry commitAndTakeBooks(Plan plan, Container inventory, Hooks hooks) throws IOException {
+        int books = plan.totalBooks();
+        if (blankBooks(inventory) < books) throw new IllegalArgumentException("Need " + books + " book-and-quills in your inventory");
+        VaultIndexV2.Entry entry = commit(plan, hooks); // validated first; a failed write is rolled back and consumes nothing
+        int left = books;
+        for (int slot = 0; slot < inventory.getContainerSize() && left > 0; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (isBlank(stack)) {
+                int taken = Math.min(stack.getCount(), left);
+                stack.shrink(taken);
+                left -= taken;
+            }
+        }
+        inventory.setChanged();
+        return entry;
     }
 
     /** Restores only the slots that differ, so items the store never placed are left alone. */
