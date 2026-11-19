@@ -15,7 +15,9 @@ import net.minecraft.world.entity.EntityEquipment;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.server.network.Filterable;
 import net.minecraft.world.item.component.ItemLore;
+import net.minecraft.world.item.component.WritableBookContent;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -454,5 +456,45 @@ class VaultBookDebitTest {
         expected.setItem(35, bookStack(12));
         expected.setItem(Inventory.SLOT_OFFHAND, book());
         assertSameInventory(bytes(expected), inv, "a store changed slots it did not need");
+    }
+
+    /** A book-and-quill the player has started writing in. */
+    static ItemStack drafted(String text) {
+        ItemStack stack = new ItemStack(Items.WRITABLE_BOOK);
+        stack.set(DataComponents.WRITABLE_BOOK_CONTENT, new WritableBookContent(List.of(Filterable.passThrough(text))));
+        return stack;
+    }
+
+    @Test void storeNeverTakesABookAndQuillWithWritingInIt() throws Exception {
+        FakeWorld w = singles(1);
+        VaultIndexStore index = new VaultIndexStore(world);
+        Inventory inv = inventory();
+        addBystanders(inv);
+        inv.setItem(3, drafted("base coordinates: 120 64 -300"));
+        inv.setItem(4, book());
+        inv.setItem(5, book());
+        byte[] file = data(2 * 2048 - 100);
+        store(w, row(1), "f.bin", file, index, inv);
+        Inventory expected = inventory();
+        addBystanders(expected);
+        expected.setItem(3, drafted("base coordinates: 120 64 -300"));
+        assertSameInventory(bytes(expected), inv, "a store took a book the player had written in");
+    }
+
+    @Test void booksWithWritingDoNotCountTowardTheBooksNeeded() throws Exception {
+        FakeWorld w = singles(1);
+        VaultIndexStore index = new VaultIndexStore(world);
+        Inventory inv = inventory();
+        addBystanders(inv);
+        inv.setItem(3, drafted("notes"));
+        inv.setItem(4, book());
+        byte[] before = bytes(inv);
+        var chestsBefore = w.snapshot();
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> store(w, row(1), "f.bin", data(2 * 2048 - 100), index, inv));
+        assertEquals("Need 2 book-and-quills in your inventory", ex.getMessage());
+        assertSameInventory(before, inv, "a refused store took books");
+        w.assertUnchanged(chestsBefore);
+        assertNull(indexBytes(world));
     }
 }
