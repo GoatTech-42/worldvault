@@ -36,11 +36,16 @@ public final class VaultService {
         Container open(VaultIndexV2.Chunk chunk) throws IOException;
     }
 
-    /** Most bytes the given chests can hold, so callers can reject a file before reading it into memory. */
+    /**
+     * Most bytes the given chests can hold, so callers can reject a file before reading it into memory. Every
+     * chunk is sized for the smallest chest given (see {@link #prepare}), so a double chest listed with single
+     * chests holds one single chest's worth.
+     */
     public static long capacity(List<Target> targets) {
-        long total = 0;
-        for (Target t : targets) total += Math.max(0, (long) t.space().getContainerSize() * RAW_PER_BOOK - HEADER_RESERVE);
-        return total;
+        if (targets.isEmpty()) return 0;
+        long perChunk = Long.MAX_VALUE;
+        for (Target t : targets) perChunk = Math.min(perChunk, (long) t.space().getContainerSize() * RAW_PER_BOOK - HEADER_RESERVE);
+        return Math.max(0, perChunk) * targets.size();
     }
 
     public static Plan prepare(String name, byte[] data, List<Target> targets, VaultIndexStore index) throws IOException {
