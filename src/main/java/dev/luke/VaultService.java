@@ -113,22 +113,25 @@ public final class VaultService {
     }
 
     /**
-     * Reserves the index row, then writes every chest. On any failure each chest touched is put back slot by slot
-     * as it was before the commit, and the index file is restored byte for byte (or removed if there was none).
+     * Writes every chest, then adds the index row last, so a crash part way leaves books in chests but never an
+     * index row for a vault that was not written. On a failure before the row is added, each chest touched is
+     * put back slot by slot as it was before the commit; the index file is not touched.
+     *
+     * <p>Chest contents reach disk at the next world save while the index is written at once, so a crash after
+     * this returns but before the world saves can still leave a row whose chests are empty again;
+     * {@link #repair} finds and removes such rows.
      */
     public static VaultIndexV2.Entry commit(Plan plan) throws IOException {
         return commit(plan, NO_HOOKS);
     }
 
     public static VaultIndexV2.Entry commit(Plan plan, Hooks hooks) throws IOException {
-        byte[] indexBefore = plan.index().raw();
         List<List<ItemStack>> before = new ArrayList<>();
         for (Target t : plan.used()) {
             List<ItemStack> slots = new ArrayList<>();
             for (int slot = 0; slot < t.space().getContainerSize(); slot++) slots.add(t.space().getItem(slot).copy());
             before.add(slots);
         }
-        plan.index().add(plan.entry());
         int touched = 0;
         try {
             for (int i = 0; i < plan.used().size(); i++) {
@@ -136,13 +139,12 @@ public final class VaultService {
                 WorldvaultChest.write(plan.used().get(i).space(), plan.books().get(i));
             }
             hooks.afterChestWrites();
-        } catch (RuntimeException ex) {
+            plan.index().add(plan.entry());
+        } catch (RuntimeException | IOException ex) {
             for (int i = 0; i < touched; i++) {
                 try { putBack(plan.used().get(i).space(), before.get(i)); }
                 catch (RuntimeException cleanup) { ex.addSuppressed(cleanup); }
             }
-            try { plan.index().restoreRaw(indexBefore); }
-            catch (IOException rollback) { ex.addSuppressed(rollback); }
             throw ex;
         }
         return plan.entry();
