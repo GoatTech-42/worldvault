@@ -2,6 +2,7 @@ package dev.luke;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
@@ -188,14 +189,21 @@ public final class VaultService {
         if (changed) space.setChanged();
     }
 
-    /** The input file for a store, checked to sit inside {@code inputDir}. */
+    /**
+     * The input file for a store, as a real path that is inside the real {@code inputDir}. A link inside the folder
+     * that resolves to a file outside it is refused, so a store can never read anything else on the host.
+     */
     public static Path inputFile(Path inputDir, String name) throws IOException {
         Path dir = inputDir.toAbsolutePath().normalize();
         Path input = dir.resolve(name).normalize();
         if (!input.startsWith(dir) || !Files.isRegularFile(input)) {
             throw new IllegalArgumentException("File not found in worldvault/in");
         }
-        return input;
+        Path real = input.toRealPath();
+        if (!real.startsWith(dir.toRealPath()) || !Files.isRegularFile(real, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IllegalArgumentException("That file links outside worldvault/in");
+        }
+        return real;
     }
 
     /** How a restored entry was verified, for the player's message. */
