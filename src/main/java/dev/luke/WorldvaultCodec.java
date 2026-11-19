@@ -9,7 +9,14 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.zip.CRC32;
 
-/** Maps a file to ordinary item stacks. Each stack carries exactly one byte. */
+/**
+ * Maps a file to ordinary item stacks. Each stack carries exactly one byte.
+ *
+ * <p>No command uses {@link #encode} or {@link #decode}: every vault, v1 and v2, is stored as written books
+ * ({@link WorldvaultBooks}), and v1 index rows are read through {@link VaultIndexV2#fromV1}. The stack codec is the
+ * earliest prototype format and is kept, with its test, only so that format stays readable; {@link File} is the
+ * shared result type for every restore.
+ */
 public final class WorldvaultCodec {
     private static final byte[] MAGIC = {'W', 'V', 'L', 'T'};
     private static final int VERSION = 1;

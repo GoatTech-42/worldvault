@@ -28,7 +28,14 @@ import java.util.ArrayList;
 import java.util.List;
 import com.mojang.brigadier.builder.ArgumentBuilder;
 
-/** Singleplayer command bridge. File bytes live in actual book items, not the index. */
+/**
+ * Singleplayer command bridge. File bytes live in actual book items, not the index.
+ *
+ * <p>Who can run it, from the code paths (not from a live LAN or dedicated-server test): the commands are not
+ * registered on a dedicated server; on an integrated server they need owner permission level (4) and the source
+ * must be the player hosting the world, so on a world opened to LAN other players are refused even with cheats
+ * on. Every command runs on the server thread; see {@link VaultService} for what that means for hoppers.
+ */
 public final class WorldvaultMod implements ModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("worldvault");
 
@@ -92,7 +99,12 @@ public final class WorldvaultMod implements ModInitializer {
                                 .executes(ctx -> repair(ctx.getSource(), StringArgumentType.getString(ctx, "name"))))));
     }
 
-    /** {@code chests <c1> <c2> [... up to <c8>]}: an explicit ordered list of chests. */
+    /**
+     * {@code chests <c1> <c2> [... up to <c8>]}: an explicit ordered list of chests. The list stops at 8 because
+     * every extra coordinate is another nested Brigadier node and another three numbers to type; {@code range}
+     * covers larger vaults (up to {@link VaultTargets#MAX_CHESTS}) without either cost. Both still require every
+     * chest within reach of the player, so the limits differ in typing, not in what can be stored.
+     */
     private static ArgumentBuilder<CommandSourceStack, ?> chestList() {
         ArgumentBuilder<CommandSourceStack, ?> next = null;
         for (int i = MAX_LIST; i >= 1; i--) {

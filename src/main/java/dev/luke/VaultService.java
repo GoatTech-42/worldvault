@@ -18,7 +18,15 @@ import org.slf4j.LoggerFactory;
 /**
  * Multi-chest store and restore. A file is split into ordered chunks (CRC32 each, SHA-256 overall), one chunk
  * per chest, and rejoined with verification. Store is two steps: {@link #prepare} validates everything and
- * touches nothing; {@link #commit} writes. A failed write is rolled back, so no chest is left half written.
+ * touches nothing; {@link #commit} writes the chests, then the index row. A failed write is rolled back, so no
+ * chest is left half written, and a rollback that cannot finish names the chests it left.
+ *
+ * <p>Threading: every method here is called on the server thread, from a command, and nothing here locks.
+ * {@code prepare} and {@code commit} run in the same tick, so no hopper, player or other block entity can change
+ * a target chest between the emptiness check and the write. Between a store and a later restore anything can:
+ * a hopper under a vault chest pulls books out one at a time, and the restore then fails naming that chest
+ * (missing book, wrong book count, or a chunk CRC mismatch) and writes no output. Restore never repairs that;
+ * put the books back, or remove the row with {@code /worldvault repair} once no chest holds its books.
  */
 public final class VaultService {
     private static final Logger LOGGER = LoggerFactory.getLogger("worldvault");
