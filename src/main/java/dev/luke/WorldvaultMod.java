@@ -169,6 +169,10 @@ public final class WorldvaultMod implements ModInitializer {
             }
             List<VaultService.Target> targets = new ArrayList<>();
             for (BlockPos pos : chests) targets.add(target(level, pos));
+            long size = Files.size(input);
+            if (size > VaultService.capacity(targets) || size > Integer.MAX_VALUE - 8) {
+                throw new IllegalArgumentException("File is too large for the chests given");
+            }
             VaultService.Plan plan = VaultService.prepare(name, Files.readAllBytes(input), targets,
                     new VaultIndexStore(source.getServer().getWorldPath(LevelResource.ROOT)));
             int books = plan.totalBooks();

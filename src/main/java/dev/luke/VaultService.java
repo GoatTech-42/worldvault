@@ -33,6 +33,13 @@ public final class VaultService {
         Container open(VaultIndexV2.Chunk chunk) throws IOException;
     }
 
+    /** Most bytes the given chests can hold, so callers can reject a file before reading it into memory. */
+    public static long capacity(List<Target> targets) {
+        long total = 0;
+        for (Target t : targets) total += Math.max(0, (long) t.space().getContainerSize() * RAW_PER_BOOK - HEADER_RESERVE);
+        return total;
+    }
+
     public static Plan prepare(String name, byte[] data, List<Target> targets, VaultIndexStore index) throws IOException {
         if (targets.isEmpty()) throw new IllegalArgumentException("Give at least one chest");
         Set<String> seen = new HashSet<>();
