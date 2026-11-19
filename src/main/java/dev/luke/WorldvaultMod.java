@@ -1,6 +1,11 @@
 package dev.luke;
 
+import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.minecraft.commands.CommandSourceStack;
@@ -24,28 +29,46 @@ import com.mojang.brigadier.builder.ArgumentBuilder;
 
 /** Singleplayer command bridge. File bytes live in actual book items, not the index. */
 public final class WorldvaultMod implements ModInitializer {
+    private static final Logger LOGGER = LoggerFactory.getLogger("worldvault");
+
     @Override public void onInitialize() {
-        CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> {
-            dispatcher.register(Commands.literal("worldvault")
-                    .then(Commands.literal("list").executes(ctx -> list(ctx.getSource())))
-                    .then(Commands.literal("store")
-                            .then(Commands.argument("name", StringArgumentType.word())
-                                    .then(Commands.argument("chest", BlockPosArgument.blockPos())
-                                            .executes(ctx -> store(ctx.getSource(),
-                                                    StringArgumentType.getString(ctx, "name"),
-                                                    List.of(BlockPosArgument.getLoadedBlockPos(ctx, "chest")))))
-                                    .then(Commands.literal("range")
-                                            .then(Commands.argument("from", BlockPosArgument.blockPos())
-                                                    .then(Commands.argument("to", BlockPosArgument.blockPos())
-                                                            .executes(ctx -> storeRange(ctx.getSource(),
-                                                                    StringArgumentType.getString(ctx, "name"),
-                                                                    BlockPosArgument.getLoadedBlockPos(ctx, "from"),
-                                                                    BlockPosArgument.getLoadedBlockPos(ctx, "to"))))))
-                                    .then(chestList())))
-                    .then(Commands.literal("restore")
-                            .then(Commands.argument("name", StringArgumentType.word())
-                                    .executes(ctx -> restore(ctx.getSource(), StringArgumentType.getString(ctx, "name"))))));
-        });
+        if (!registersOn(FabricLoader.getInstance().getEnvironmentType())) {
+            LOGGER.info("Worldvault: dedicated server, commands not registered");
+            return;
+        }
+        CommandRegistrationCallback.EVENT.register((dispatcher, registry, environment) -> register(dispatcher));
+    }
+
+    /** Whether the commands are registered in this environment. */
+    static boolean registersOn(EnvType environment) {
+        return true;
+    }
+
+    /** Why a command source may not run Worldvault, or null when it may. */
+    static String refusal(boolean dedicatedServer, boolean singleplayer, boolean owner) {
+        return singleplayer ? null : "Worldvault currently works in singleplayer only.";
+    }
+
+    static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
+        dispatcher.register(Commands.literal("worldvault")
+                .then(Commands.literal("list").executes(ctx -> list(ctx.getSource())))
+                .then(Commands.literal("store")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .then(Commands.argument("chest", BlockPosArgument.blockPos())
+                                        .executes(ctx -> store(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "name"),
+                                                List.of(BlockPosArgument.getLoadedBlockPos(ctx, "chest")))))
+                                .then(Commands.literal("range")
+                                        .then(Commands.argument("from", BlockPosArgument.blockPos())
+                                                .then(Commands.argument("to", BlockPosArgument.blockPos())
+                                                        .executes(ctx -> storeRange(ctx.getSource(),
+                                                                StringArgumentType.getString(ctx, "name"),
+                                                                BlockPosArgument.getLoadedBlockPos(ctx, "from"),
+                                                                BlockPosArgument.getLoadedBlockPos(ctx, "to"))))))
+                                .then(chestList())))
+                .then(Commands.literal("restore")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(ctx -> restore(ctx.getSource(), StringArgumentType.getString(ctx, "name"))))));
     }
 
     /** {@code chests <c1> <c2> [... up to <c8>]}: an explicit ordered list of chests. */
@@ -89,8 +112,12 @@ public final class WorldvaultMod implements ModInitializer {
         return source.getServer().getWorldPath(LevelResource.ROOT).resolve("worldvault");
     }
     private static boolean singleplayer(CommandSourceStack source) {
-        if (source.getServer().isSingleplayer()) return true;
-        source.sendFailure(Component.literal("Worldvault currently works in singleplayer only."));
+        var server = source.getServer();
+        ServerPlayer player = source.getPlayer();
+        boolean owner = player != null && server.isSingleplayerOwner(player.nameAndId());
+        String refused = refusal(server.isDedicatedServer(), server.isSingleplayer(), owner);
+        if (refused == null) return true;
+        source.sendFailure(Component.literal(refused));
         return false;
     }
     private static int list(CommandSourceStack source) {
@@ -134,11 +161,7 @@ public final class WorldvaultMod implements ModInitializer {
             if (name.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 255) {
                 throw new IllegalArgumentException("Filename is too long");
             }
-            Path inputDir = root(source).resolve("in").toAbsolutePath().normalize();
-            Path input = inputDir.resolve(name).normalize();
-            if (!input.startsWith(inputDir) || !Files.isRegularFile(input)) {
-                throw new IllegalArgumentException("File not found in worldvault/in");
-            }
+            Path input = VaultService.inputFile(root(source).resolve("in"), name);
             List<VaultService.Target> targets = VaultTargets.targets(access(level), chests);
             long size = Files.size(input);
             if (size > VaultService.capacity(targets) || size > Integer.MAX_VALUE - 8) {
@@ -200,17 +223,6 @@ public final class WorldvaultMod implements ModInitializer {
             if (candidate.dimension().identifier().toString().equals(chunk.dimension())) { level = candidate; break; }
         }
         if (level == null) throw new IOException("That dimension is unavailable");
-        BlockPos chestPos = new BlockPos(chunk.x(), chunk.y(), chunk.z());
-        // Load the saved chunk, including when the player is on the other side of the world.
-        level.getChunk(chestPos.getX() >> 4, chestPos.getZ() >> 4);
-        if (!(level.getBlockEntity(chestPos) instanceof ChestBlockEntity chest)) {
-            throw new IOException("Chest at " + chunk.x() + " " + chunk.y() + " " + chunk.z()
-                    + " is gone; restore a world backup or bring the books back");
-        }
-        ServerLevel halfLevel = level;
-        return WorldvaultChest.restoreSpace(chunk.doubleChest(), chest, pos -> {
-            halfLevel.getChunk(pos.getX() >> 4, pos.getZ() >> 4);
-            return halfLevel.getBlockEntity(pos);
-        });
+        return VaultTargets.open(access(level), chunk);
     }
 }

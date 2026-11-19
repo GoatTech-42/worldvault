@@ -36,6 +36,22 @@ public final class VaultService {
         Container open(VaultIndexV2.Chunk chunk) throws IOException;
     }
 
+    /** Thrown by a resolver when the recorded position is loaded but no chest is there any more. */
+    public static final class ChestMissingException extends IOException {
+        public ChestMissingException(String message) { super(message); }
+    }
+
+    /** Test seam for the steps of {@link #commit}; the commands use {@link #NO_HOOKS}. */
+    public interface Hooks {
+        /** Runs once every chest has been written, before commit returns. */
+        default void afterChestWrites() {}
+    }
+    public static final Hooks NO_HOOKS = new Hooks() {};
+
+    /** What {@link #check} found for one index row. */
+    public enum Verdict { INTACT, ORPHANED, KEEP }
+    public record Check(Verdict verdict, String detail) {}
+
     /**
      * Most bytes the given chests can hold, so callers can reject a file before reading it into memory. Every
      * chunk is sized for the smallest chest given (see {@link #prepare}), so a double chest listed with single
@@ -101,6 +117,10 @@ public final class VaultService {
      * as it was before the commit, and the index file is restored byte for byte (or removed if there was none).
      */
     public static VaultIndexV2.Entry commit(Plan plan) throws IOException {
+        return commit(plan, NO_HOOKS);
+    }
+
+    public static VaultIndexV2.Entry commit(Plan plan, Hooks hooks) throws IOException {
         byte[] indexBefore = plan.index().raw();
         List<List<ItemStack>> before = new ArrayList<>();
         for (Target t : plan.used()) {
@@ -115,6 +135,7 @@ public final class VaultService {
                 touched = i + 1;
                 WorldvaultChest.write(plan.used().get(i).space(), plan.books().get(i));
             }
+            hooks.afterChestWrites();
         } catch (RuntimeException ex) {
             for (int i = 0; i < touched; i++) {
                 try { putBack(plan.used().get(i).space(), before.get(i)); }
@@ -137,6 +158,31 @@ public final class VaultService {
             }
         }
         if (changed) space.setChanged();
+    }
+
+    /** The input file for a store, checked to sit inside {@code inputDir}. */
+    public static Path inputFile(Path inputDir, String name) throws IOException {
+        Path dir = inputDir.toAbsolutePath().normalize();
+        Path input = dir.resolve(name).normalize();
+        if (!input.startsWith(dir) || !Files.isRegularFile(input)) {
+            throw new IllegalArgumentException("File not found in worldvault/in");
+        }
+        return input;
+    }
+
+    /** How a restored entry was verified, for the player's message. */
+    public static String integrity(VaultIndexV2.Entry entry) {
+        return "verified";
+    }
+
+    /** Verifies an index row against its chests; see {@link Verdict}. */
+    public static Check check(VaultIndexV2.Entry entry, ChestResolver resolver) {
+        throw new UnsupportedOperationException("not implemented");
+    }
+
+    /** Runs {@link #check} and removes the row only when it is orphaned. */
+    public static Check repair(VaultIndexV2.Entry entry, ChestResolver resolver, VaultIndexStore index) throws IOException {
+        throw new UnsupportedOperationException("not implemented");
     }
 
     /**

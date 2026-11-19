@@ -59,6 +59,16 @@ public final class VaultTargets {
                 List.of(halves[0].getBlockPos(), halves[1].getBlockPos()));
     }
 
+    /** Opens the chest (or double chest) behind a recorded chunk, in the layout it was stored in. */
+    public static net.minecraft.world.Container open(WorldAccess world, VaultIndexV2.Chunk chunk) throws java.io.IOException {
+        BlockPos pos = new BlockPos(chunk.x(), chunk.y(), chunk.z());
+        if (!(world.blockEntity(pos) instanceof ChestBlockEntity chest)) {
+            throw new VaultService.ChestMissingException("Chest at " + chunk.x() + " " + chunk.y() + " " + chunk.z()
+                    + " is gone; restore a world backup or bring the books back");
+        }
+        return WorldvaultChest.restoreSpace(chunk.doubleChest(), chest, world::blockEntity);
+    }
+
     /** Fails before any lookup when {@code pos} sits in an unloaded chunk, so a store never loads one. */
     private static void requireLoaded(WorldAccess world, BlockPos pos, String what) {
         if (!world.isLoaded(pos)) {
