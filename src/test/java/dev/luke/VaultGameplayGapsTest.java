@@ -92,15 +92,9 @@ class VaultGameplayGapsTest {
             blocks.put(rightPos, right);
             return new ChestBlockEntity[]{left, right};
         }
-        /** Opens a recorded chunk the way the restore command does, honouring single/double layout. */
+        /** Opens a recorded chunk through the same code the restore command uses. */
         VaultService.ChestResolver resolver() {
-            return chunk -> {
-                BlockPos pos = new BlockPos(chunk.x(), chunk.y(), chunk.z());
-                if (!(blocks.get(pos) instanceof ChestBlockEntity chest)) {
-                    throw new IOException("Chest at " + chunk.x() + " " + chunk.y() + " " + chunk.z() + " is gone");
-                }
-                return WorldvaultChest.restoreSpace(chunk.doubleChest(), chest, blocks::get);
-            };
+            return chunk -> VaultTargets.open(this, chunk);
         }
         /** Every slot of every chest, copied, so a test can prove nothing changed. */
         Map<BlockPos, List<ItemStack>> snapshot() {
