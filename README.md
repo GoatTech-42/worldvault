@@ -24,3 +24,13 @@ Double chests: you can store into two paired chest blocks (both halves must be e
 Run `gradle test` to check the codecs, locator index, and real Minecraft chest serialization. The chest test writes file bytes into written-book items, saves the chest to compressed NBT with the game's own serializer, loads a new chest from that file, and checks every restored byte. Fixtures cover empty files, book-boundary sizes, 8 KB, and 54 KB. Other cases check reordered slots, missing books, foreign items, occupied chests, and files that exceed one chest. All tests run without starting a server or touching an existing world.
 
 The September 26 disposable-server smoke test also exercised store/list/restore, survival book cost, double-chest rejection, and output overwrite protection. That test used a temporary build with the singleplayer gate relaxed. The shipped mod keeps the gate; an integrated singleplayer-client playtest is still a separate check.
+
+## Multi-chest vaults (v2)
+
+A file can span several chests, in order, one chunk per chest (CRC32 each, SHA-256 for the whole file):
+
+- `/worldvault store <name> <x y z>` one chest (or double chest), as before.
+- `/worldvault store <name> chests <c1> <c2> [... <c8>]` an ordered list of chests.
+- `/worldvault store <name> range <from> <to>` every chest in the box, ordered by x, then y, then z (a double chest counts once). Limits: 4,096 blocks, 64 chests.
+
+Only as many chests as the file needs are used, in order, and all of them must be empty, unlisted by another vault and not overlapping. Everything is checked before the first book is written; a failed write empties the chests again and removes the index row, and book-and-quills are consumed only after success. Restore reads and verifies every chest (chest N is named in the error), then writes `worldvault/out` only if all checks pass. A missing chest, a changed book or a swapped chunk fails with nothing written. v1 vaults still restore; the index file becomes v2 the next time something is stored.
