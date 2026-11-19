@@ -239,7 +239,8 @@ public final class VaultService {
 
     /**
      * Verifies an index row against its chests. ORPHANED: every recorded chest is loaded and none holds a
-     * Worldvault book (a broken chest counts as holding none), so the row points at nothing. INTACT: the vault
+     * Worldvault book (a broken chest counts as holding none; for a double chest, every chest beside the recorded
+     * half is loaded and checked too, whatever the layout is now), so the row points at nothing. INTACT: the vault
      * restores and verifies. KEEP: anything else, including a chest that is not loaded or books that are there but
      * do not verify; the detail says which chest.
      */
@@ -249,13 +250,10 @@ public final class VaultService {
         for (int i = 0; i < n; i++) {
             VaultIndexV2.Chunk c = entry.chunks().get(i);
             String where = c.dimension() + " " + c.x() + " " + c.y() + " " + c.z();
-            Container space;
-            try { space = resolver.open(c); }
-            catch (ChestMissingException gone) { continue; }
+            try { if (inspector.holdsBooks(c)) withBooks.add(where); }
             catch (IOException ex) {
                 return new Check(Verdict.KEEP, "Chest " + (i + 1) + " of " + n + " (" + where + "): " + ex.getMessage());
             }
-            if (WorldvaultChest.holdsVaultBooks(space)) withBooks.add(where);
         }
         if (withBooks.isEmpty()) {
             return new Check(Verdict.ORPHANED, "none of its " + n + (n == 1 ? " chest holds" : " chests hold") + " Worldvault books");

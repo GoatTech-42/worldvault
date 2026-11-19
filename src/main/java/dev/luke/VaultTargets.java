@@ -83,7 +83,21 @@ public final class VaultTargets {
 
     /** Whether the chest at a recorded chunk, or any chest that could be its other half, holds Worldvault books. */
     public static boolean holdsVaultBooks(WorldAccess world, VaultIndexV2.Chunk chunk) throws java.io.IOException {
-        throw new UnsupportedOperationException("not implemented");
+        BlockPos pos = new BlockPos(chunk.x(), chunk.y(), chunk.z());
+        List<BlockPos> look = new ArrayList<>(List.of(pos));
+        // The layout may have changed since the store (a half broken, a chest re-paired), so inspect each chest
+        // block on its own. A double chest's other half is always a horizontal neighbour of the recorded half.
+        if (chunk.doubleChest()) for (net.minecraft.core.Direction d : net.minecraft.core.Direction.Plane.HORIZONTAL) look.add(pos.relative(d));
+        for (BlockPos p : look) {
+            if (!world.isLoaded(p)) {
+                throw new java.io.IOException("Chest at " + p.getX() + " " + p.getY() + " " + p.getZ()
+                        + " is not loaded; go near it and try again");
+            }
+        }
+        for (BlockPos p : look) {
+            if (world.blockEntity(p) instanceof ChestBlockEntity chest && WorldvaultChest.holdsVaultBooks(chest)) return true;
+        }
+        return false;
     }
 
     /** Fails before any lookup when {@code pos} sits in an unloaded chunk, so a store never loads one. */
