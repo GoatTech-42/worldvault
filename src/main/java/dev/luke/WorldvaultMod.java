@@ -115,7 +115,7 @@ public final class WorldvaultMod implements ModInitializer {
     private static VaultTargets.WorldAccess access(ServerLevel level) {
         return new VaultTargets.WorldAccess() {
             @Override public String dimension() { return level.dimension().identifier().toString(); }
-            @Override public boolean isLoaded(BlockPos pos) { return level.isLoaded(pos); }
+            @Override public boolean isLoaded(BlockPos pos) { return level.hasChunkAt(pos); }
             @Override public net.minecraft.world.level.block.entity.BlockEntity blockEntity(BlockPos pos) {
                 return level.getBlockEntity(pos);
             }

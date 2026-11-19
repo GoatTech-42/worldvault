@@ -26,7 +26,7 @@ public final class VaultTargets {
     public interface WorldAccess {
         String dimension();
 
-        /** True when the chunk holding {@code pos} is loaded. Never loads anything. */
+        /** True when the chunk column holding {@code pos} is loaded, whatever its height. Never loads anything. */
         boolean isLoaded(BlockPos pos);
 
         /** The block entity at {@code pos}. On a server level this loads the chunk when it is not loaded. */
@@ -46,14 +46,24 @@ public final class VaultTargets {
     }
 
     public static VaultService.Target target(WorldAccess world, BlockPos pos) {
+        requireLoaded(world, pos, "Chest at ");
         if (!(world.blockEntity(pos) instanceof ChestBlockEntity chest)) {
             throw new IllegalArgumentException("No chest at " + pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
         boolean paired = chest.getBlockState().getValue(ChestBlock.TYPE) != ChestType.SINGLE;
         if (!paired) return new VaultService.Target(world.dimension(), pos, false, chest, List.of(pos));
+        requireLoaded(world, pos.relative(ChestBlock.getConnectedDirection(chest.getBlockState())),
+                "The other half of the double chest at ");
         ChestBlockEntity[] halves = WorldvaultChest.halves(chest, world::blockEntity);
         return new VaultService.Target(world.dimension(), pos, true, WorldvaultChest.combine(halves[0], halves[1]),
                 List.of(halves[0].getBlockPos(), halves[1].getBlockPos()));
+    }
+
+    /** Fails before any lookup when {@code pos} sits in an unloaded chunk, so a store never loads one. */
+    private static void requireLoaded(WorldAccess world, BlockPos pos, String what) {
+        if (!world.isLoaded(pos)) {
+            throw new IllegalArgumentException(what + pos.getX() + " " + pos.getY() + " " + pos.getZ() + " is not loaded; stand closer");
+        }
     }
 
     /** Chest positions inside the box, one per chest: a double chest is listed once, by the half met first. */
@@ -61,6 +71,13 @@ public final class VaultTargets {
         long volume = (long) (Math.abs(from.getX() - to.getX()) + 1) * (Math.abs(from.getY() - to.getY()) + 1)
                 * (Math.abs(from.getZ() - to.getZ()) + 1);
         if (volume > MAX_RANGE_VOLUME) throw new IllegalArgumentException("Range is too large (limit " + MAX_RANGE_VOLUME + " blocks)");
+        // Check first, so a scan never loads a chunk (a level lookup in an unloaded chunk would load it).
+        for (int x = Math.min(from.getX(), to.getX()); x <= Math.max(from.getX(), to.getX()); x++)
+            for (int z = Math.min(from.getZ(), to.getZ()); z <= Math.max(from.getZ(), to.getZ()); z++) {
+                if (!world.isLoaded(new BlockPos(x, from.getY(), z))) {
+                    throw new IllegalArgumentException("Part of that range is not loaded; stand closer");
+                }
+            }
         List<BlockPos> found = new ArrayList<>();
         Set<BlockPos> covered = new HashSet<>();
         for (int x = Math.min(from.getX(), to.getX()); x <= Math.max(from.getX(), to.getX()); x++)
