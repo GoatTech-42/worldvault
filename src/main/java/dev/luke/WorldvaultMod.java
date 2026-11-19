@@ -190,6 +190,10 @@ public final class WorldvaultMod implements ModInitializer {
             source.sendSuccess(() -> Component.literal("Stored " + name + " in " + books + " books across "
                     + chestCount + (chestCount == 1 ? " chest." : " chests.")), false);
             return 1;
+        } catch (VaultService.RollbackIncompleteException ex) {
+            // already logged with every suppressed cleanup failure; tell the player which chests to empty
+            source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));
+            return 0;
         } catch (Exception ex) {
             source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));
             return 0;

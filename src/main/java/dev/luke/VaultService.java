@@ -11,6 +11,8 @@ import java.util.Set;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.Container;
 import net.minecraft.world.item.ItemStack;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Multi-chest store and restore. A file is split into ordered chunks (CRC32 each, SHA-256 overall), one chunk
@@ -18,6 +20,7 @@ import net.minecraft.world.item.ItemStack;
  * touches nothing; {@link #commit} writes. A failed write is rolled back, so no chest is left half written.
  */
 public final class VaultService {
+    private static final Logger LOGGER = LoggerFactory.getLogger("worldvault");
     private static final int RAW_PER_BOOK = 2048;
     private static final int HEADER_RESERVE = 269;
 
@@ -39,6 +42,21 @@ public final class VaultService {
     /** Thrown by a resolver when the recorded position is loaded but no chest is there any more. */
     public static final class ChestMissingException extends IOException {
         public ChestMissingException(String message) { super(message); }
+    }
+
+    /**
+     * A store failed and putting its chests back failed too. Names every chest that may still hold this store's
+     * books; no index row was written for them, so they are plain items the player can take out by hand.
+     */
+    public static final class RollbackIncompleteException extends IOException {
+        private final List<String> chests;
+        public RollbackIncompleteException(Exception cause, List<String> chests) {
+            super("Store failed (" + cause.getMessage() + ") and these chests could not be put back: "
+                    + String.join(", ", chests) + ". They may still hold Worldvault books that are not in the index;"
+                    + " take them out by hand before using those chests again.", cause);
+            this.chests = List.copyOf(chests);
+        }
+        public List<String> chests() { return chests; }
     }
 
     /** Test seam for the steps of {@link #commit}; the commands use {@link #NO_HOOKS}. */
@@ -141,11 +159,19 @@ public final class VaultService {
             hooks.afterChestWrites();
             plan.index().add(plan.entry());
         } catch (RuntimeException | IOException ex) {
+            List<String> stuck = new ArrayList<>();
             for (int i = 0; i < touched; i++) {
-                try { putBack(plan.used().get(i).space(), before.get(i)); }
-                catch (RuntimeException cleanup) { ex.addSuppressed(cleanup); }
+                Target t = plan.used().get(i);
+                try { putBack(t.space(), before.get(i)); }
+                catch (RuntimeException cleanup) {
+                    ex.addSuppressed(cleanup);
+                    stuck.add(t.dimension() + " " + t.pos().getX() + " " + t.pos().getY() + " " + t.pos().getZ());
+                }
             }
-            throw ex;
+            if (stuck.isEmpty()) throw ex;
+            RollbackIncompleteException report = new RollbackIncompleteException(ex, stuck);
+            LOGGER.error("Worldvault: {}", report.getMessage(), report);
+            throw report;
         }
         return plan.entry();
     }
