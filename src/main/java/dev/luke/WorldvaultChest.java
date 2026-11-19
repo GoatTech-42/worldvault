@@ -70,6 +70,24 @@ public final class WorldvaultChest {
         return WorldvaultBooks.unpack(books);
     }
 
+    /** Non-empty slots; after a successful {@link #read} every one of them is a Worldvault book. */
+    public static int bookCount(Container chest) {
+        int count = 0;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) count++;
+        return count;
+    }
+
+    /** True when any slot holds a written book signed by Worldvault. */
+    public static boolean holdsVaultBooks(Container chest) {
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) {
+            ItemStack stack = chest.getItem(slot);
+            if (!stack.is(Items.WRITTEN_BOOK)) continue;
+            WrittenBookContent content = stack.get(DataComponents.WRITTEN_BOOK_CONTENT);
+            if (content != null && content.author().equals("Worldvault")) return true;
+        }
+        return false;
+    }
+
     /** The combined 54-slot space of a double chest: LEFT half first (slots 0-26), then RIGHT half (27-53). */
     public static Container combine(ChestBlockEntity left, ChestBlockEntity right) {
         return new CompoundContainer(left, right);
