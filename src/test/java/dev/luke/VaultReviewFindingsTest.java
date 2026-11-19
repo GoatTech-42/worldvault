@@ -146,6 +146,88 @@ class VaultReviewFindingsTest {
         assertEquals(List.of(), w.forcedLoads);
     }
 
+    /** The chest left behind when one half of a double chest is broken: same items, now a single chest. */
+    static ChestBlockEntity unpair(FakeWorld w, ChestBlockEntity broken, ChestBlockEntity survivor) {
+        w.blocks.remove(broken.getBlockPos());
+        ChestBlockEntity single = new ChestBlockEntity(survivor.getBlockPos(), Blocks.CHEST.defaultBlockState()
+                .setValue(net.minecraft.world.level.block.ChestBlock.FACING,
+                        survivor.getBlockState().getValue(net.minecraft.world.level.block.ChestBlock.FACING)));
+        for (int s = 0; s < 27; s++) single.setItem(s, survivor.getItem(s).copy());
+        w.blocks.put(single.getBlockPos(), single);
+        return single;
+    }
+
+    /** CodeRabbit on f77ba53: the recorded half gone does not mean the other half is empty. */
+    @Test void repairKeepsARowWhenTheRecordedHalfIsGoneButTheOtherHalfHoldsBooks() throws Exception {
+        FakeWorld w = new FakeWorld();
+        ChestBlockEntity[] p = w.pair(new BlockPos(0, 64, 0));
+        VaultIndexStore index = new VaultIndexStore(world);
+        // named by the RIGHT half; a small file sits entirely in the LEFT half
+        VaultService.commit(VaultService.prepare("f.bin", data(5000), VaultTargets.targets(w, List.of(p[1].getBlockPos())), index));
+        assertTrue(holdsBooks(p[0]));
+        unpair(w, p[1], p[0]);
+        VaultService.Check check = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
+        assertEquals(VaultService.Verdict.KEEP, check.verdict(), check.detail());
+        assertEquals(1, index.load().size(), "the row was removed while the other half still holds the books");
+    }
+
+    @Test void repairKeepsARowWhenAPossibleOtherHalfIsNotLoaded() throws Exception {
+        FakeWorld w = new FakeWorld();
+        ChestBlockEntity[] p = w.pair(new BlockPos(15, 64, 0)); // RIGHT half at x=16, next chunk
+        VaultIndexStore index = new VaultIndexStore(world);
+        VaultService.commit(VaultService.prepare("f.bin", data(5000), VaultTargets.targets(w, List.of(p[1].getBlockPos())), index));
+        w.blocks.remove(p[1].getBlockPos());
+        w.unload(0, 0); // the surviving LEFT half's chunk
+        VaultService.Check check = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
+        assertEquals(VaultService.Verdict.KEEP, check.verdict(), check.detail());
+        assertTrue(check.detail().contains("not loaded"), check.detail());
+        assertEquals(1, index.load().size());
+        assertEquals(List.of(), w.forcedLoads);
+    }
+
+    /** CodeRabbit on f77ba53: an emptied double chest that lost a half is a single chest now, and still orphaned. */
+    @Test void repairRemovesARowWhenAnEmptiedDoubleChestLostItsOtherHalf() throws Exception {
+        FakeWorld w = new FakeWorld();
+        ChestBlockEntity[] p = w.pair(new BlockPos(0, 64, 0));
+        VaultIndexStore index = new VaultIndexStore(world);
+        VaultService.commit(VaultService.prepare("f.bin", data(5000), VaultTargets.targets(w, List.of(p[0].getBlockPos())), index));
+        empty(p[0]);
+        empty(p[1]);
+        unpair(w, p[1], p[0]);
+        VaultService.Check check = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
+        assertEquals(VaultService.Verdict.ORPHANED, check.verdict(), check.detail());
+        assertTrue(index.load().isEmpty());
+    }
+
+    /** CodeRabbit on f77ba53: a write that fails part way must not leave a partial file that blocks a retry. */
+    @Test void failedOutputWriteLeavesNoPartialFileAndARetryWorks() throws Exception {
+        FakeWorld w = singles(2);
+        VaultIndexStore index = new VaultIndexStore(world);
+        byte[] original = data(SINGLE_CAP + 100);
+        VaultService.commit(VaultService.prepare("f.bin", original, VaultTargets.targets(w, row(2)), index));
+        VaultService.Hooks diskFull = new VaultService.Hooks() {
+            @Override public java.io.OutputStream wrapOutput(java.io.OutputStream out) {
+                return new java.io.FilterOutputStream(out) {
+                    int written;
+                    @Override public void write(byte[] b, int off, int len) throws IOException {
+                        int part = Math.min(len, 1000 - written);
+                        if (part > 0) { out.write(b, off, part); written += part; }
+                        if (part < len) throw new IOException("No space left on device");
+                    }
+                };
+            }
+        };
+        IOException ex = assertThrows(IOException.class, () -> VaultService.restoreTo(index.load().get(0), w.resolver(), out(world), diskFull));
+        assertEquals("No space left on device", ex.getMessage());
+        assertNoOutput(world);
+        assertArrayEquals(original, VaultService.restoreTo(index.load().get(0), w.resolver(), out(world)).bytes());
+        assertArrayEquals(original, Files.readAllBytes(out(world).resolve("f.bin")));
+        // an output that was there before is still never replaced
+        IOException again = assertThrows(IOException.class, () -> VaultService.restoreTo(index.load().get(0), w.resolver(), out(world)));
+        assertTrue(again.getMessage().contains("already has"), again.getMessage());
+        assertArrayEquals(original, Files.readAllBytes(out(world).resolve("f.bin")));
+    }
+
     // ---- B3: a rollback that cannot finish is reported, never silent ----
 
     /** A chest that takes books but refuses to be emptied again. */
