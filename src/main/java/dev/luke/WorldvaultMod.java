@@ -151,6 +151,7 @@ public final class WorldvaultMod implements ModInitializer {
                 int books = entry.chunks().stream().mapToInt(VaultIndexV2.Chunk::books).sum();
                 source.sendSuccess(() -> Component.literal(entry.name() + " (" + books + " books, "
                         + entry.chunks().size() + (entry.chunks().size() == 1 ? " chest, " : " chests, ")
+                        + (VaultService.isLegacy(entry) ? "v1, CRC32 only, " : "")
                         + first.dimension() + " " + first.x() + " " + first.y() + " " + first.z() + ")"), false);
             }
             return entries.size();
@@ -234,7 +235,8 @@ public final class WorldvaultMod implements ModInitializer {
             // Every chest is read and verified before anything is written to disk.
             WorldvaultCodec.File file = VaultService.restoreTo(entry, chunk -> openChunk(source, chunk),
                     root(source).resolve("out"));
-            source.sendSuccess(() -> Component.literal("Restored " + file.name() + " to worldvault/out."), false);
+            String integrity = VaultService.integrity(entry);
+            source.sendSuccess(() -> Component.literal("Restored " + file.name() + " to worldvault/out (" + integrity + ")."), false);
             return 1;
         } catch (Exception ex) {
             source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));

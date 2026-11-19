@@ -206,9 +206,18 @@ public final class VaultService {
         return real;
     }
 
-    /** How a restored entry was verified, for the player's message. */
+    /**
+     * How a restored entry was verified, for the player's message. Rows migrated from a v1 index recorded no
+     * whole-file SHA-256 and no per-chunk CRC32, so only the CRC32 inside the books protects them.
+     */
     public static String integrity(VaultIndexV2.Entry entry) {
-        return "verified";
+        if (isLegacy(entry)) return "legacy v1 vault: book CRC32 checked, no SHA-256 was recorded";
+        return "per-chest CRC32 and whole-file SHA-256 verified";
+    }
+
+    /** True for a row read from a v1 index: no size, no SHA-256, no chunk CRC32. */
+    public static boolean isLegacy(VaultIndexV2.Entry entry) {
+        return entry.sha256().equals("-");
     }
 
     /**
