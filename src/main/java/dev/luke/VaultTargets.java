@@ -81,6 +81,11 @@ public final class VaultTargets {
         return WorldvaultChest.restoreSpace(chunk.doubleChest(), chest, world::blockEntity);
     }
 
+    /** Whether the chest at a recorded chunk, or any chest that could be its other half, holds Worldvault books. */
+    public static boolean holdsVaultBooks(WorldAccess world, VaultIndexV2.Chunk chunk) throws java.io.IOException {
+        throw new UnsupportedOperationException("not implemented");
+    }
+
     /** Fails before any lookup when {@code pos} sits in an unloaded chunk, so a store never loads one. */
     private static void requireLoaded(WorldAccess world, BlockPos pos, String what) {
         if (!world.isLoaded(pos)) {

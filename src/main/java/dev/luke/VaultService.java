@@ -72,6 +72,15 @@ public final class VaultService {
     public interface Hooks {
         /** Runs once every chest has been written, before commit returns. */
         default void afterChestWrites() {}
+
+        /** Wraps the stream a restore writes its output file through. */
+        default java.io.OutputStream wrapOutput(java.io.OutputStream out) { return out; }
+    }
+
+    /** Says whether the chest (or either half) behind a recorded chunk still holds Worldvault books. */
+    public interface ChestInspector {
+        /** Throws when that cannot be established, for example because a position is not loaded. */
+        boolean holdsBooks(VaultIndexV2.Chunk chunk) throws IOException;
     }
     public static final Hooks NO_HOOKS = new Hooks() {};
 
@@ -234,7 +243,7 @@ public final class VaultService {
      * restores and verifies. KEEP: anything else, including a chest that is not loaded or books that are there but
      * do not verify; the detail says which chest.
      */
-    public static Check check(VaultIndexV2.Entry entry, ChestResolver resolver) {
+    public static Check check(VaultIndexV2.Entry entry, ChestInspector inspector, ChestResolver resolver) {
         int n = entry.chunks().size();
         List<String> withBooks = new ArrayList<>();
         for (int i = 0; i < n; i++) {
@@ -261,8 +270,9 @@ public final class VaultService {
     }
 
     /** Runs {@link #check} and removes the row only when it is orphaned. */
-    public static Check repair(VaultIndexV2.Entry entry, ChestResolver resolver, VaultIndexStore index) throws IOException {
-        Check result = check(entry, resolver);
+    public static Check repair(VaultIndexV2.Entry entry, ChestInspector inspector, ChestResolver resolver,
+                               VaultIndexStore index) throws IOException {
+        Check result = check(entry, inspector, resolver);
         if (result.verdict() == Verdict.ORPHANED) index.remove(entry);
         return result;
     }
@@ -273,13 +283,20 @@ public final class VaultService {
      */
     public static WorldvaultCodec.File restoreTo(VaultIndexV2.Entry entry, ChestResolver resolver, Path outputDir)
             throws IOException {
+        return restoreTo(entry, resolver, outputDir, NO_HOOKS);
+    }
+
+    public static WorldvaultCodec.File restoreTo(VaultIndexV2.Entry entry, ChestResolver resolver, Path outputDir,
+                                                 Hooks hooks) throws IOException {
         Path dir = outputDir.toAbsolutePath().normalize();
         Path output = dir.resolve(entry.name()).normalize();
         if (!output.startsWith(dir)) throw new IOException("Unsafe output name");
         if (Files.exists(output)) throw new IOException("worldvault/out already has " + entry.name() + "; move it first");
         WorldvaultCodec.File file = restore(entry, resolver);
         Files.createDirectories(dir);
-        Files.write(output, file.bytes(), StandardOpenOption.CREATE_NEW);
+        try (java.io.OutputStream out = hooks.wrapOutput(Files.newOutputStream(output, StandardOpenOption.CREATE_NEW))) {
+            out.write(file.bytes());
+        }
         return file;
     }
 

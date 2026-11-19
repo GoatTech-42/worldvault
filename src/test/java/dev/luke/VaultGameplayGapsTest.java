@@ -96,6 +96,10 @@ class VaultGameplayGapsTest {
         VaultService.ChestResolver resolver() {
             return chunk -> VaultTargets.open(this, chunk);
         }
+        /** Inspects a recorded chunk through the same code the repair command uses. */
+        VaultService.ChestInspector inspector() {
+            return chunk -> VaultTargets.holdsVaultBooks(this, chunk);
+        }
         /** Every slot of every chest, copied, so a test can prove nothing changed. */
         Map<BlockPos, List<ItemStack>> snapshot() {
             Map<BlockPos, List<ItemStack>> out = new HashMap<>();

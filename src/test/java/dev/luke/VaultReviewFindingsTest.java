@@ -106,7 +106,7 @@ class VaultReviewFindingsTest {
         VaultIndexStore index = new VaultIndexStore(world);
         var plan = VaultService.prepare("f.bin", data(SINGLE_CAP + 100), VaultTargets.targets(w, row(2)), index);
         index.add(plan.entry()); // the row reached disk, the chest contents never did
-        VaultService.Check check = VaultService.repair(index.load().get(0), w.resolver(), index);
+        VaultService.Check check = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
         assertEquals(VaultService.Verdict.ORPHANED, check.verdict(), check.detail());
         assertTrue(index.load().isEmpty());
         VaultService.commit(VaultService.prepare("f.bin", data(50), VaultTargets.targets(w, row(1)), index));
@@ -118,7 +118,7 @@ class VaultReviewFindingsTest {
         var plan = VaultService.prepare("f.bin", data(SINGLE_CAP + 100), VaultTargets.targets(w, row(2)), index);
         index.add(plan.entry());
         w.blocks.remove(row(2).get(1));
-        assertEquals(VaultService.Verdict.ORPHANED, VaultService.repair(index.load().get(0), w.resolver(), index).verdict());
+        assertEquals(VaultService.Verdict.ORPHANED, VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index).verdict());
         assertTrue(index.load().isEmpty());
     }
 
@@ -127,19 +127,19 @@ class VaultReviewFindingsTest {
         FakeWorld w = singles(3);
         VaultIndexStore index = new VaultIndexStore(world);
         VaultService.commit(VaultService.prepare("f.bin", data(2 * SINGLE_CAP), VaultTargets.targets(w, row(2)), index));
-        VaultService.Check intact = VaultService.repair(index.load().get(0), w.resolver(), index);
+        VaultService.Check intact = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
         assertEquals(VaultService.Verdict.INTACT, intact.verdict());
         assertEquals(1, index.load().size());
         // chest 1 emptied, chest 2 still holds its books: keep the row and name the chest with books
         empty((Container) w.blocks.get(row(2).get(0)));
-        VaultService.Check partly = VaultService.repair(index.load().get(0), w.resolver(), index);
+        VaultService.Check partly = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
         assertEquals(VaultService.Verdict.KEEP, partly.verdict());
         assertTrue(partly.detail().contains("2 64 0"), partly.detail());
         assertEquals(1, index.load().size());
         // a chest that is not loaded cannot be judged: keep the row
         empty((Container) w.blocks.get(row(2).get(1)));
         w.unload(0, 0);
-        VaultService.Check unloaded = VaultService.repair(index.load().get(0), w.resolver(), index);
+        VaultService.Check unloaded = VaultService.repair(index.load().get(0), w.inspector(), w.resolver(), index);
         assertEquals(VaultService.Verdict.KEEP, unloaded.verdict());
         assertTrue(unloaded.detail().contains("not loaded"), unloaded.detail());
         assertEquals(1, index.load().size());

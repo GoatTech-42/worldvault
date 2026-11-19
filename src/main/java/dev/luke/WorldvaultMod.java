@@ -266,7 +266,9 @@ public final class WorldvaultMod implements ModInitializer {
                 if (entry.name().equals(name)) { found = entry; break; }
             }
             if (found == null) throw new IllegalArgumentException("No file by that name in this world");
-            VaultService.Check check = VaultService.repair(found, chunk -> openChunk(source, chunk), index);
+            VaultService.Check check = VaultService.repair(found,
+                    chunk -> VaultTargets.holdsVaultBooks(access(level(source, chunk)), chunk),
+                    chunk -> openChunk(source, chunk), index);
             switch (check.verdict()) {
                 case ORPHANED -> {
                     LOGGER.warn("Worldvault: removed orphaned index row {}: {}", name, check.detail());
@@ -288,12 +290,14 @@ public final class WorldvaultMod implements ModInitializer {
         }
     }
 
-    private static Container openChunk(CommandSourceStack source, VaultIndexV2.Chunk chunk) throws IOException {
-        ServerLevel level = null;
+    private static ServerLevel level(CommandSourceStack source, VaultIndexV2.Chunk chunk) throws IOException {
         for (ServerLevel candidate : source.getServer().getAllLevels()) {
-            if (candidate.dimension().identifier().toString().equals(chunk.dimension())) { level = candidate; break; }
+            if (candidate.dimension().identifier().toString().equals(chunk.dimension())) return candidate;
         }
-        if (level == null) throw new IOException("That dimension is unavailable");
-        return VaultTargets.open(access(level), chunk);
+        throw new IOException("That dimension is unavailable");
+    }
+
+    private static Container openChunk(CommandSourceStack source, VaultIndexV2.Chunk chunk) throws IOException {
+        return VaultTargets.open(access(level(source, chunk)), chunk);
     }
 }
