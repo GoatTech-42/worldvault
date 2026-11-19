@@ -68,7 +68,10 @@ public final class WorldvaultMod implements ModInitializer {
                                 .then(chestList())))
                 .then(Commands.literal("restore")
                         .then(Commands.argument("name", StringArgumentType.word())
-                                .executes(ctx -> restore(ctx.getSource(), StringArgumentType.getString(ctx, "name"))))));
+                                .executes(ctx -> restore(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
+                .then(Commands.literal("repair")
+                        .then(Commands.argument("name", StringArgumentType.word())
+                                .executes(ctx -> repair(ctx.getSource(), StringArgumentType.getString(ctx, "name"))))));
     }
 
     /** {@code chests <c1> <c2> [... up to <c8>]}: an explicit ordered list of chests. */
@@ -215,6 +218,38 @@ public final class WorldvaultMod implements ModInitializer {
                     root(source).resolve("out"));
             source.sendSuccess(() -> Component.literal("Restored " + file.name() + " to worldvault/out."), false);
             return 1;
+        } catch (Exception ex) {
+            source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));
+            return 0;
+        }
+    }
+
+    /** Removes an index row only when none of its chests holds Worldvault books; otherwise reports and keeps it. */
+    private static int repair(CommandSourceStack source, String name) {
+        if (!singleplayer(source)) return 0;
+        try {
+            VaultIndexStore index = new VaultIndexStore(source.getServer().getWorldPath(LevelResource.ROOT));
+            VaultIndexV2.Entry found = null;
+            for (VaultIndexV2.Entry entry : index.load()) {
+                if (entry.name().equals(name)) { found = entry; break; }
+            }
+            if (found == null) throw new IllegalArgumentException("No file by that name in this world");
+            VaultService.Check check = VaultService.repair(found, chunk -> openChunk(source, chunk), index);
+            switch (check.verdict()) {
+                case ORPHANED -> {
+                    LOGGER.warn("Worldvault: removed orphaned index row {}: {}", name, check.detail());
+                    source.sendSuccess(() -> Component.literal("Removed the index row for " + name + ": " + check.detail() + "."), false);
+                    return 1;
+                }
+                case INTACT -> {
+                    source.sendSuccess(() -> Component.literal(name + " is intact (" + check.detail() + "); nothing to repair."), false);
+                    return 1;
+                }
+                default -> {
+                    source.sendFailure(Component.literal("Worldvault: kept the index row for " + name + ". " + check.detail()));
+                    return 0;
+                }
+            }
         } catch (Exception ex) {
             source.sendFailure(Component.literal("Worldvault: " + ex.getMessage()));
             return 0;

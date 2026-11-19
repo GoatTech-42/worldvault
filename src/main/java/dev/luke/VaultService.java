@@ -203,14 +203,43 @@ public final class VaultService {
         return "verified";
     }
 
-    /** Verifies an index row against its chests; see {@link Verdict}. */
+    /**
+     * Verifies an index row against its chests. ORPHANED: every recorded chest is loaded and none holds a
+     * Worldvault book (a broken chest counts as holding none), so the row points at nothing. INTACT: the vault
+     * restores and verifies. KEEP: anything else, including a chest that is not loaded or books that are there but
+     * do not verify; the detail says which chest.
+     */
     public static Check check(VaultIndexV2.Entry entry, ChestResolver resolver) {
-        throw new UnsupportedOperationException("not implemented");
+        int n = entry.chunks().size();
+        List<String> withBooks = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            VaultIndexV2.Chunk c = entry.chunks().get(i);
+            String where = c.dimension() + " " + c.x() + " " + c.y() + " " + c.z();
+            Container space;
+            try { space = resolver.open(c); }
+            catch (ChestMissingException gone) { continue; }
+            catch (IOException ex) {
+                return new Check(Verdict.KEEP, "Chest " + (i + 1) + " of " + n + " (" + where + "): " + ex.getMessage());
+            }
+            if (WorldvaultChest.holdsVaultBooks(space)) withBooks.add(where);
+        }
+        if (withBooks.isEmpty()) {
+            return new Check(Verdict.ORPHANED, "none of its " + n + (n == 1 ? " chest holds" : " chests hold") + " Worldvault books");
+        }
+        try {
+            restore(entry, resolver);
+            return new Check(Verdict.INTACT, "all " + n + (n == 1 ? " chest verifies" : " chests verify"));
+        } catch (IOException ex) {
+            return new Check(Verdict.KEEP, "Worldvault books are still in " + String.join(", ", withBooks)
+                    + " but the vault does not verify (" + ex.getMessage() + ")");
+        }
     }
 
     /** Runs {@link #check} and removes the row only when it is orphaned. */
     public static Check repair(VaultIndexV2.Entry entry, ChestResolver resolver, VaultIndexStore index) throws IOException {
-        throw new UnsupportedOperationException("not implemented");
+        Check result = check(entry, resolver);
+        if (result.verdict() == Verdict.ORPHANED) index.remove(entry);
+        return result;
     }
 
     /**
