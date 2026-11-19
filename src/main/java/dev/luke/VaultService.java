@@ -285,6 +285,12 @@ public final class VaultService {
             try {
                 WorldvaultCodec.File part = WorldvaultChest.read(space);
                 if (!part.name().equals(entry.name())) throw new IOException(label + "books do not match the index");
+                int recorded = entry.chunks().get(i).books();
+                int found = WorldvaultChest.bookCount(space);
+                if (recorded > 0 && found != recorded) {
+                    throw new IOException(label + "the index records " + recorded + (recorded == 1 ? " book" : " books")
+                            + " but the chest holds " + found);
+                }
                 pieces.add(part.bytes());
             } catch (IllegalArgumentException ex) {
                 throw new IOException(label + ex.getMessage(), ex);

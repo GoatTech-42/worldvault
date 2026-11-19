@@ -70,6 +70,13 @@ public final class WorldvaultChest {
         return WorldvaultBooks.unpack(books);
     }
 
+    /** Non-empty slots; after a successful {@link #read} every one of them is a Worldvault book. */
+    public static int bookCount(Container chest) {
+        int count = 0;
+        for (int slot = 0; slot < chest.getContainerSize(); slot++) if (!chest.getItem(slot).isEmpty()) count++;
+        return count;
+    }
+
     /** True when any slot holds a written book signed by Worldvault. */
     public static boolean holdsVaultBooks(Container chest) {
         for (int slot = 0; slot < chest.getContainerSize(); slot++) {
