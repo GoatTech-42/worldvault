@@ -43,7 +43,7 @@ A v2 vault records a CRC32 for each chest's chunk and a SHA-256 of the whole fil
 
 ### Repair
 
-`/worldvault repair <name>` checks one index row against its chests. If every chest is loaded and none holds a Worldvault book (a broken chest counts as empty), the row points at nothing and is removed, freeing the name and the coordinates. If the vault verifies, or any chest still holds Worldvault books, or a chest is not loaded, the row is kept and the message says which chest. A row like that can appear when the game crashes after a store but before the world saves: chest contents reach disk at the next world save, while the index is written at once.
+`/worldvault repair <name>` checks one index row against its chests. If every chest is loaded and none holds a Worldvault book (a broken chest counts as empty), the row points at nothing and is removed, freeing the name and the coordinates. For a vault stored in a double chest, the four chests beside the recorded half must be loaded and checked too, because the other half may still hold books after the recorded half was broken or the pair was split; a neighbouring chest with any Worldvault book keeps the row. If the vault verifies, or any chest still holds Worldvault books, or a chest is not loaded, the row is kept and the message says which chest. A row like that can appear when the game crashes after a store but before the world saves: chest contents reach disk at the next world save, while the index is written at once.
 
 ### Who can run the commands
 
